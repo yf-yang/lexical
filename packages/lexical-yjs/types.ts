@@ -22,6 +22,11 @@ declare module 'yjs' {
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   interface Map<MapType> {
-    _collabNode: CollabLineBreakNode | CollabTextNode;
+    _collabNode: CollabTextNode | CollabLineBreakNode;
+  }
+
+  interface YText {
+    // YXmlText extends YText, so CollabElementNode should be added here.
+    _collabNode: CollabTextNode | CollabElementNode;
   }
 }
