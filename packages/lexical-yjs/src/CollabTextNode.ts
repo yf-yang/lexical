@@ -6,7 +6,6 @@
  *
  */
 
-import type {Binding} from '.';
 import type {CollabElementNode} from './CollabElementNode';
 import type {NodeKey, NodeMap, TextNode} from 'lexical';
 
@@ -20,9 +19,9 @@ import invariant from 'shared/invariant';
 import simpleDiffWithCursor from 'shared/simpleDiffWithCursor';
 import {Map as YMap, Text as YText} from 'yjs';
 
-import {syncPropertiesFromLexical, syncPropertiesFromYjs} from './Utils';
+import {CollabNode} from './CollabNode';
 
-function diffTextContentAndApplyDelta(
+function $diffTextContentAndApplyDelta(
   collabNode: CollabTextNode,
   key: NodeKey,
   prevText: string,
@@ -39,36 +38,33 @@ function diffTextContentAndApplyDelta(
     }
   }
 
+  // XXX: What if there exists multiple diff? Is this implementation robust enough?
+  // XXX: maybe use fast-diff?
   const diff = simpleDiffWithCursor(prevText, nextText, cursorOffset);
   collabNode._text.delete(diff.index, diff.remove);
   collabNode._text.insert(diff.index, diff.insert);
 }
 
-export class CollabTextNode {
-  _map: YMap<unknown>;
-  _text: YText;
-  _key: NodeKey;
-  _parent: CollabElementNode;
-  _type: string;
+export class CollabTextNode extends CollabNode {
+  _text!: YText;
   _normalized: boolean;
 
   constructor(
-    map: YMap<unknown>,
-    text: string | undefined,
-    parent: CollabElementNode,
+    sharedMap: null | YMap<unknown>,
+    parent: null | CollabElementNode,
     type: string,
   ) {
+    super(sharedMap, parent, type, 'text');
     this._key = '';
-    this._map = map;
-    // When text is undefined, the node is synced from remote, so _map already contains _text
-    if (text === undefined) {
-      this._text = this._map.get('_text') as YText;
+
+    if (sharedMap === null) {
+      this._text = new YText();
+      this._sharedMap.set('text', this._text);
+      this._text._collabNode = this;
     } else {
-      this._text = new YText(text);
-      this._map.set('_text', this._text);
+      initExistingSharedText(this);
     }
-    this._parent = parent;
-    this._type = type;
+
     this._normalized = false;
   }
 
@@ -90,57 +86,27 @@ export class CollabTextNode {
     return this._text;
   }
 
-  getType(): string {
-    return this._type;
-  }
-
-  getKey(): NodeKey {
-    return this._key;
-  }
-
   getOffset(): number {
-    const collabElementNode = this._parent;
-    return collabElementNode.getChildOffset(this);
+    return this.getParent().getChildOffset(this);
   }
 
-  syncPropertiesAndTextFromLexical(
-    binding: Binding,
+  syncTextFromLexical(
     nextLexicalNode: TextNode,
     prevNodeMap: null | NodeMap,
   ): void {
     const prevLexicalNode = this.getPrevNode(prevNodeMap);
     const nextText = nextLexicalNode.__text;
 
-    syncPropertiesFromLexical(
-      binding,
-      this._map,
-      prevLexicalNode,
-      nextLexicalNode,
-    );
-
     if (prevLexicalNode !== null) {
       const prevText = prevLexicalNode.__text;
 
       if (prevText !== nextText) {
         const key = nextLexicalNode.__key;
-        diffTextContentAndApplyDelta(this, key, prevText, nextText);
+        $diffTextContentAndApplyDelta(this, key, prevText, nextText);
       }
+    } else {
+      this._text.insert(0, nextText);
     }
-  }
-
-  syncPropertiesAndTextFromYjs(
-    binding: Binding,
-    keysChanged: null | Set<string>,
-  ): void {
-    const lexicalNode = this.getNode();
-    invariant(
-      lexicalNode !== null,
-      'syncPropertiesAndTextFromYjs: could not find decorator node',
-    );
-
-    syncPropertiesFromYjs(binding, this._map, lexicalNode, keysChanged);
-
-    this.syncTextFromYjs();
   }
 
   syncTextFromYjs(): void {
@@ -157,20 +123,26 @@ export class CollabTextNode {
     }
   }
 
-  destroy(binding: Binding): void {
-    const collabNodeMap = binding.collabNodeMap;
-    collabNodeMap.delete(this._key);
+  // for debugging
+  toJSON(): Record<string, unknown> {
+    return {
+      ...super.toJSON(),
+      text: this._text.toJSON(),
+    };
   }
 }
 
 export function $createCollabTextNode(
-  map: YMap<unknown>,
-  text: string | undefined,
+  sharedMap: null | YMap<unknown>,
   parent: CollabElementNode,
   type: string,
 ): CollabTextNode {
-  const collabNode = new CollabTextNode(map, text, parent, type);
-  map._collabNode = collabNode;
-  collabNode._text._collabNode = collabNode;
-  return collabNode;
+  return new CollabTextNode(sharedMap, parent, type);
+}
+
+export function initExistingSharedText(collabNode: CollabTextNode): void {
+  const text = collabNode._sharedMap.get('text') as undefined | null | YText;
+  invariant(text != null, 'Expected shared type to include text attribute');
+  collabNode._text = text;
+  text._collabNode = collabNode;
 }

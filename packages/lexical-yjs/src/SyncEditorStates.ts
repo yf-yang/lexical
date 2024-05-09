@@ -10,7 +10,6 @@ import type {EditorState, NodeKey} from 'lexical';
 
 import {$createOffsetView} from '@lexical/offset';
 import {
-  $createParagraphNode,
   $getNodeByKey,
   $getRoot,
   $getSelection,
@@ -19,10 +18,9 @@ import {
   $setSelection,
 } from 'lexical';
 import invariant from 'shared/invariant';
-import {Text as YText, YEvent, YMapEvent, YTextEvent, YXmlEvent} from 'yjs';
+import {Text as YText, YArrayEvent,YEvent, YMapEvent, YTextEvent} from 'yjs';
 
 import {Binding, Provider} from '.';
-import {CollabDecoratorNode} from './CollabDecoratorNode';
 import {CollabElementNode} from './CollabElementNode';
 import {CollabTextNode} from './CollabTextNode';
 import {
@@ -32,49 +30,47 @@ import {
 } from './SyncCursors';
 import {
   doesSelectionNeedRecovering,
-  getOrInitCollabNodeFromSharedType,
+  getOrInitCollabNodeFromSharedMap,
+  syncPropertiesFromLexical,
   syncWithTransaction,
+  updateNodeFromYjs,
 } from './Utils';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function syncEvent(binding: Binding, event: any): void {
   const {target} = event;
-  const collabNode = getOrInitCollabNodeFromSharedType(binding, target);
 
-  if (collabNode instanceof CollabElementNode && event instanceof YTextEvent) {
-    // @ts-expect-error We need to access the private property of the class
-    const {keysChanged, childListChanged, delta} = event;
+  // Each sharedMap will not change. A sharedMap has the following keys:
+  // - category: string, static
+  // - type: string, static
+  // - props: YMap<unknown>, dynamic
+  // - children: YArray<unknown>, dynamic, only for CollabElementNode's sharedMap
+  // - text: YText, dynamic, only for CollabTextNode's sharedMap
+  // For those dynamic yjs types, each one should already has a property _collabNode that points
+  // to the corresponding CollabNode instance.
+  const collabNode = getOrInitCollabNodeFromSharedMap(binding, target);
+
+  if (event instanceof YMapEvent) {
+    // props changes
 
     // Update
-    if (keysChanged.size > 0) {
-      collabNode.syncPropertiesFromYjs(binding, keysChanged);
-    }
-
-    if (childListChanged) {
-      collabNode.applyChildrenYjsDelta(binding, delta);
-      collabNode.syncChildrenFromYjs(binding);
-    }
-  } else if (collabNode instanceof CollabTextNode) {
-    if (event instanceof YMapEvent) {
-      const {keysChanged} = event;
-
-      // Update
-      if (keysChanged.size > 0) {
-        collabNode.syncPropertiesAndTextFromYjs(binding, keysChanged);
-      }
-    } else {
-      collabNode.syncTextFromYjs();
+    if (event.changes.keys.size > 0) {
+      updateNodeFromYjs(collabNode);
     }
   } else if (
-    collabNode instanceof CollabDecoratorNode &&
-    event instanceof YXmlEvent
+    event instanceof YTextEvent &&
+    collabNode instanceof CollabTextNode
   ) {
-    const {attributesChanged} = event;
+    // text changes
 
-    // Update
-    if (attributesChanged.size > 0) {
-      collabNode.syncPropertiesFromYjs(binding, attributesChanged);
-    }
+    collabNode.syncTextFromYjs();
+  } else if (
+    event instanceof YArrayEvent &&
+    collabNode instanceof CollabElementNode
+  ) {
+    // children changes
+    collabNode.applyChildrenYjsDelta(binding, event.delta);
+    collabNode.syncChildrenFromYjs(binding);
   } else {
     invariant(false, 'Expected text, element, or decorator event');
   }
@@ -103,11 +99,6 @@ export function syncYjsChangesToLexical(
       for (let i = 0; i < events.length; i++) {
         const event = events[i];
         syncEvent(binding, event);
-      }
-      // If there was a collision on the top level paragraph
-      // we need to re-add a paragraph
-      if ($getRoot().getChildrenSize() === 0) {
-        $getRoot().append($createParagraphNode());
       }
 
       const selection = $getSelection();
@@ -175,7 +166,7 @@ export function syncYjsChangesToLexical(
   );
 }
 
-function handleNormalizationMergeConflicts(
+function $handleNormalizationMergeConflicts(
   binding: Binding,
   normalizedNodes: Set<NodeKey>,
 ): void {
@@ -201,12 +192,12 @@ function handleNormalizationMergeConflicts(
           continue;
         }
 
-        const parent = collabNode._parent;
+        const parent = collabNode.getParent();
 
-        parent._xmlText.delete(offset, 1);
+        parent._sharedChildren.delete(offset, 1);
 
         collabNodeMap.delete(nodeKey);
-        const parentChildren = parent._children;
+        const parentChildren = parent!._children;
         const index = parentChildren.indexOf(collabNode);
         parentChildren.splice(index, 1);
       }
@@ -246,7 +237,7 @@ export function syncLexicalUpdateToYjs(
       // when we need to handle normalization merge conflicts.
       if (tags.has('collaboration') || tags.has('historic')) {
         if (normalizedNodes.size > 0) {
-          handleNormalizationMergeConflicts(binding, normalizedNodes);
+          $handleNormalizationMergeConflicts(binding, normalizedNodes);
         }
 
         return;
@@ -256,11 +247,10 @@ export function syncLexicalUpdateToYjs(
         const prevNodeMap = prevEditorState._nodeMap;
         const nextLexicalRoot = $getRoot();
         const collabRoot = binding.root;
-        collabRoot.syncPropertiesFromLexical(
-          binding,
-          nextLexicalRoot,
-          prevNodeMap,
-        );
+        // avoid calling exportJSON and compare props if the element itself is not dirty
+        if (dirtyElements.get('root')) {
+          syncPropertiesFromLexical(collabRoot, nextLexicalRoot);
+        }
         collabRoot.syncChildrenFromLexical(
           binding,
           nextLexicalRoot,

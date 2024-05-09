@@ -6,27 +6,22 @@
  *
  */
 
-import {CollabDecoratorNode} from './src/CollabDecoratorNode';
 import {CollabElementNode} from './src/CollabElementNode';
-import {CollabLineBreakNode} from './src/CollabLineBreakNode';
+import {CollabNode} from './src/CollabNode';
 import {CollabTextNode} from './src/CollabTextNode';
 
 declare module 'yjs' {
-  interface XmlElement {
-    _collabNode: CollabDecoratorNode;
-  }
-
-  interface XmlText {
-    _collabNode: CollabElementNode;
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  interface Map<MapType> {
+    _collabNode: CollabNode;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  interface Map<MapType> {
-    _collabNode: CollabTextNode | CollabLineBreakNode;
+  interface Array<T> {
+    _collabNode: CollabElementNode;
   }
 
-  interface YText {
-    // YXmlText extends YText, so CollabElementNode should be added here.
-    _collabNode: CollabTextNode | CollabElementNode;
+  interface Text {
+    _collabNode: CollabTextNode;
   }
 }

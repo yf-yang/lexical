@@ -6,61 +6,59 @@
  *
  */
 
-import type {CollabDecoratorNode} from './CollabDecoratorNode';
 import type {CollabElementNode} from './CollabElementNode';
-import type {CollabLineBreakNode} from './CollabLineBreakNode';
-import type {CollabTextNode} from './CollabTextNode';
 import type {Cursor} from './SyncCursors';
 import type {LexicalEditor, NodeKey} from 'lexical';
 import type {Doc} from 'yjs';
 
 import {Klass, LexicalNode} from 'lexical';
 import invariant from 'shared/invariant';
-import {XmlText} from 'yjs';
 
-import {Provider} from '.';
 import {$createCollabElementNode} from './CollabElementNode';
+import {CollabNode} from './CollabNode';
 
 export type ClientID = number;
 export type Binding = {
   clientID: number;
-  collabNodeMap: Map<
-    NodeKey,
-    | CollabElementNode
-    | CollabTextNode
-    | CollabDecoratorNode
-    | CollabLineBreakNode
-  >;
+  collabNodeMap: Map<NodeKey, CollabNode>;
   cursors: Map<ClientID, Cursor>;
   cursorsContainer: null | HTMLElement;
   doc: Doc;
   docMap: Map<string, Doc>;
   editor: LexicalEditor;
   id: string;
-  nodeProperties: Map<string, Array<string>>;
   root: CollabElementNode;
-  excludedProperties: ExcludedProperties;
+  nestedEditorPropKeys: NestedEditorPropKeys;
 };
-export type ExcludedProperties = Map<Klass<LexicalNode>, Set<string>>;
+export type NestedEditorPropKeys = Map<Klass<LexicalNode>, Set<string>>;
 
 export function createBinding(
   editor: LexicalEditor,
-  provider: Provider,
   id: string,
   doc: Doc | null | undefined,
   docMap: Map<string, Doc>,
-  excludedProperties?: ExcludedProperties,
+  nestedEditorPropKeys?: NestedEditorPropKeys,
 ): Binding {
   invariant(
     doc !== undefined && doc !== null,
     'createBinding: doc is null or undefined',
   );
-  const rootXmlText = doc.get('root', XmlText) as XmlText;
+  // This map is useless, but we need to create it to satisfy the type system.
+  const rootMap = doc.getMap('root');
+  // Those two properties should be globally unique, so create them from doc.
+  const rootProps = doc.getMap('root.props');
+  const rootChildren = doc.getArray('root.children');
+  rootMap.set('type', 'root');
+  rootMap.set('category', 'element');
   const root: CollabElementNode = $createCollabElementNode(
-    rootXmlText,
+    rootMap,
     null,
     'root',
   );
+  root._props = rootProps;
+  rootProps._collabNode = root;
+  root._sharedChildren = rootChildren;
+  rootChildren._collabNode = root;
   root._key = 'root';
   return {
     clientID: doc.clientID,
@@ -70,9 +68,8 @@ export function createBinding(
     doc,
     docMap,
     editor,
-    excludedProperties: excludedProperties || new Map(),
     id,
-    nodeProperties: new Map(),
+    nestedEditorPropKeys: nestedEditorPropKeys || new Map(),
     root,
   };
 }

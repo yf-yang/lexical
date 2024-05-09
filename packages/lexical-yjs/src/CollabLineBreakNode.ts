@@ -6,25 +6,22 @@
  *
  */
 
-import type {Binding} from '.';
 import type {CollabElementNode} from './CollabElementNode';
-import type {LineBreakNode, NodeKey} from 'lexical';
+import type {LineBreakNode} from 'lexical';
 import type {Map as YMap} from 'yjs';
 
 import {$getNodeByKey, $isLineBreakNode} from 'lexical';
 import invariant from 'shared/invariant';
 
-export class CollabLineBreakNode {
-  _map: YMap<unknown>;
-  _key: NodeKey;
-  _parent: CollabElementNode;
-  _type: 'linebreak';
+import {CollabNode} from './CollabNode';
 
-  constructor(map: YMap<unknown>, parent: CollabElementNode) {
-    this._key = '';
-    this._map = map;
-    this._parent = parent;
-    this._type = 'linebreak';
+export class CollabLineBreakNode extends CollabNode {
+  constructor(
+    sharedMap: null | YMap<unknown>,
+    parent: CollabElementNode,
+    type: string,
+  ) {
+    super(sharedMap, parent, type, 'linebreak');
   }
 
   getNode(): null | LineBreakNode {
@@ -32,34 +29,15 @@ export class CollabLineBreakNode {
     return $isLineBreakNode(node) ? node : null;
   }
 
-  getKey(): NodeKey {
-    return this._key;
-  }
-
   getCursorYjsType(): never {
     invariant(false, 'getCursorYjsType: not a valid cursor type');
-  }
-
-  getType(): string {
-    return this._type;
-  }
-
-  getOffset(): number {
-    const collabElementNode = this._parent;
-    return collabElementNode.getChildOffset(this);
-  }
-
-  destroy(binding: Binding): void {
-    const collabNodeMap = binding.collabNodeMap;
-    collabNodeMap.delete(this._key);
   }
 }
 
 export function $createCollabLineBreakNode(
-  map: YMap<unknown>,
+  sharedMap: null | YMap<unknown>,
   parent: CollabElementNode,
+  type: string,
 ): CollabLineBreakNode {
-  const collabNode = new CollabLineBreakNode(map, parent);
-  map._collabNode = collabNode;
-  return collabNode;
+  return new CollabLineBreakNode(sharedMap, parent, type);
 }

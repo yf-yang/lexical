@@ -8,54 +8,48 @@
 
 import type {Binding} from '.';
 import type {ElementNode, NodeKey, NodeMap} from 'lexical';
-import type {AbstractType, Map as YMap, XmlElement, XmlText} from 'yjs';
+import type {AbstractType, Map as YMap} from 'yjs';
 
-import {
-  $getNodeByKey,
-  $isDecoratorNode,
-  $isElementNode,
-  $isTextNode,
-} from 'lexical';
+import {$getNodeByKey, $isElementNode, $isTextNode} from 'lexical';
 import invariant from 'shared/invariant';
+import {Array as YArray} from 'yjs';
 
 import {CollabDecoratorNode} from './CollabDecoratorNode';
 import {CollabLineBreakNode} from './CollabLineBreakNode';
+import {CollabNode} from './CollabNode';
 import {CollabTextNode} from './CollabTextNode';
 import {
   $createCollabNodeFromLexicalNode,
   $getNodeByKeyOrThrow,
   createChildrenArray,
   createLexicalNodeFromCollabNode,
-  getOrInitCollabNodeFromSharedType,
+  getOrInitCollabNodeFromSharedMap,
   removeFromParent,
   syncPropertiesFromLexical,
-  syncPropertiesFromYjs,
 } from './Utils';
 
 type IntentionallyMarkedAsDirtyElement = boolean;
 
-export class CollabElementNode {
-  _key: NodeKey;
-  _children: Array<
-    | CollabElementNode
-    | CollabTextNode
-    | CollabDecoratorNode
-    | CollabLineBreakNode
-  >;
-  _xmlText: XmlText;
-  _type: string;
-  _parent: null | CollabElementNode;
+export class CollabElementNode extends CollabNode {
+  _children: CollabNode[];
+  _sharedChildren!: YArray<unknown>;
 
   constructor(
-    xmlText: XmlText,
+    sharedMap: null | YMap<unknown>,
     parent: null | CollabElementNode,
     type: string,
   ) {
+    super(sharedMap, parent, type, 'element');
+    if (sharedMap === null) {
+      this._sharedChildren = new YArray();
+      this._sharedMap.set('children', this._sharedChildren);
+      this._sharedChildren._collabNode = this;
+    } else if (parent !== null) {
+      initExistingSharedChildren(this);
+    }
+    // if parent === null (root node), then we set _sharedChildren when creating binding
     this._key = '';
     this._children = [];
-    this._xmlText = xmlText;
-    this._type = type;
-    this._parent = parent;
   }
 
   getPrevNode(nodeMap: null | NodeMap): null | ElementNode {
@@ -72,42 +66,12 @@ export class CollabElementNode {
     return $isElementNode(node) ? node : null;
   }
 
-  getCursorYjsType(): XmlText {
-    return this._xmlText;
-  }
-
-  getType(): string {
-    return this._type;
-  }
-
-  getKey(): NodeKey {
-    return this._key;
+  getCursorYjsType(): YMap<unknown> {
+    return this._sharedMap;
   }
 
   isEmpty(): boolean {
     return this._children.length === 0;
-  }
-
-  getOffset(): number {
-    const collabElementNode = this._parent;
-    invariant(
-      collabElementNode !== null,
-      'getOffset: could not find collab element node',
-    );
-
-    return collabElementNode.getChildOffset(this);
-  }
-
-  syncPropertiesFromYjs(
-    binding: Binding,
-    keysChanged: null | Set<string>,
-  ): void {
-    const lexicalNode = this.getNode();
-    invariant(
-      lexicalNode !== null,
-      'syncPropertiesFromYjs: could not find element node',
-    );
-    syncPropertiesFromYjs(binding, this._xmlText, lexicalNode, keysChanged);
   }
 
   applyChildrenYjsDelta(
@@ -134,13 +98,11 @@ export class CollabElementNode {
       } else if (typeof deleteDelta === 'number') {
         children.splice(currIndex, deleteDelta);
       } else if (insertDelta != null) {
-        const sharedType = insertDelta;
-        const collabNode = getOrInitCollabNodeFromSharedType(
-          binding,
-          sharedType as XmlText | YMap<unknown> | XmlElement,
-          this,
+        const sharedMaps = insertDelta as YMap<unknown>[];
+        const collabNodes = sharedMaps.map((sharedMap) =>
+          getOrInitCollabNodeFromSharedMap(binding, sharedMap, this),
         );
-        children.splice(currIndex, 0, collabNode);
+        children.splice(currIndex, 0, ...collabNodes);
         currIndex += 1;
       } else {
         throw new Error('Unexpected delta format');
@@ -180,29 +142,7 @@ export class CollabElementNode {
       const collabKey = childCollabNode._key;
 
       if (collabLexicalChildNode !== null && lexicalChildKey === collabKey) {
-        const childNeedsUpdating = $isTextNode(collabLexicalChildNode);
-        // Update
         visitedKeys.add(lexicalChildKey);
-
-        if (childNeedsUpdating) {
-          childCollabNode._key = lexicalChildKey;
-
-          if (childCollabNode instanceof CollabElementNode) {
-            const xmlText = childCollabNode._xmlText;
-            childCollabNode.syncPropertiesFromYjs(binding, null);
-            childCollabNode.applyChildrenYjsDelta(binding, xmlText.toDelta());
-            childCollabNode.syncChildrenFromYjs(binding);
-          } else if (childCollabNode instanceof CollabTextNode) {
-            childCollabNode.syncPropertiesAndTextFromYjs(binding, null);
-          } else if (childCollabNode instanceof CollabDecoratorNode) {
-            childCollabNode.syncPropertiesFromYjs(binding, null);
-          } else if (!(childCollabNode instanceof CollabLineBreakNode)) {
-            invariant(
-              false,
-              'syncChildrenFromYjs: expected text, element, decorator, or linebreak collab node',
-            );
-          }
-        }
 
         nextLexicalChildrenKeys[i] = lexicalChildKey;
         prevChildNode = collabLexicalChildNode;
@@ -286,19 +226,6 @@ export class CollabElementNode {
     }
   }
 
-  syncPropertiesFromLexical(
-    binding: Binding,
-    nextLexicalNode: ElementNode,
-    prevNodeMap: null | NodeMap,
-  ): void {
-    syncPropertiesFromLexical(
-      binding,
-      this._xmlText,
-      this.getPrevNode(prevNodeMap),
-      nextLexicalNode,
-    );
-  }
-
   _syncChildFromLexical(
     binding: Binding,
     index: number,
@@ -313,13 +240,13 @@ export class CollabElementNode {
 
     if (
       childCollabNode instanceof CollabElementNode &&
-      $isElementNode(nextChildNode)
+      $isElementNode(nextChildNode) &&
+      (dirtyElements === null || dirtyElements.has(key))
     ) {
-      childCollabNode.syncPropertiesFromLexical(
-        binding,
-        nextChildNode,
-        prevNodeMap,
-      );
+      // avoid calling exportJSON and compare props if the element itself is not dirty
+      if (dirtyElements === null || dirtyElements.get(key)) {
+        syncPropertiesFromLexical(childCollabNode, nextChildNode);
+      }
       childCollabNode.syncChildrenFromLexical(
         binding,
         nextChildNode,
@@ -329,22 +256,13 @@ export class CollabElementNode {
       );
     } else if (
       childCollabNode instanceof CollabTextNode &&
-      $isTextNode(nextChildNode)
+      $isTextNode(nextChildNode) &&
+      (dirtyLeaves === null || dirtyLeaves.has(key))
     ) {
-      childCollabNode.syncPropertiesAndTextFromLexical(
-        binding,
-        nextChildNode,
-        prevNodeMap,
-      );
-    } else if (
-      childCollabNode instanceof CollabDecoratorNode &&
-      $isDecoratorNode(nextChildNode)
-    ) {
-      childCollabNode.syncPropertiesFromLexical(
-        binding,
-        nextChildNode,
-        prevNodeMap,
-      );
+      syncPropertiesFromLexical(childCollabNode, nextChildNode);
+      childCollabNode.syncTextFromLexical(nextChildNode, prevNodeMap);
+    } else if (dirtyElements === null || dirtyElements.has(key)) {
+      syncPropertiesFromLexical(childCollabNode, nextChildNode);
     }
   }
 
@@ -374,7 +292,7 @@ export class CollabElementNode {
       const nextKey = nextChildren[nextIndex];
 
       if (prevKey === nextKey) {
-        // Nove move, create or remove
+        // No move, create or remove
         this._syncChildFromLexical(
           binding,
           nextIndex,
@@ -436,7 +354,7 @@ export class CollabElementNode {
           nextChildNode,
           this,
         );
-        this.append(collabNode);
+        this.splice(binding, this._children.length, 0, collabNode);
         collabNodeMap.set(key, collabNode);
       }
     } else if (removeOldChildren && !appendNewChildren) {
@@ -446,52 +364,19 @@ export class CollabElementNode {
     }
   }
 
-  append(
-    collabNode:
-      | CollabElementNode
-      | CollabDecoratorNode
-      | CollabTextNode
-      | CollabLineBreakNode,
-  ): void {
-    const xmlText = this._xmlText;
-    const offset = this._children.length;
-
-    if (collabNode instanceof CollabElementNode) {
-      xmlText.insertEmbed(offset, collabNode._xmlText);
-    } else if (collabNode instanceof CollabTextNode) {
-      xmlText.insertEmbed(offset, collabNode._map);
-    } else if (collabNode instanceof CollabLineBreakNode) {
-      xmlText.insertEmbed(offset, collabNode._map);
-    } else if (collabNode instanceof CollabDecoratorNode) {
-      xmlText.insertEmbed(offset, collabNode._xmlElem);
-    }
-
-    this._children.push(collabNode);
-  }
-
   splice(
     binding: Binding,
     index: number,
     delCount: number,
-    collabNode?:
-      | CollabElementNode
-      | CollabDecoratorNode
-      | CollabTextNode
-      | CollabLineBreakNode,
+    collabNode?: CollabNode,
   ): void {
     const children = this._children;
+    const sharedChildren = this._sharedChildren;
 
-    const xmlText = this._xmlText;
-    xmlText.delete(index, delCount);
+    sharedChildren.delete(index, delCount);
 
-    if (collabNode instanceof CollabElementNode) {
-      xmlText.insertEmbed(index, collabNode._xmlText);
-    } else if (collabNode instanceof CollabTextNode) {
-      xmlText.insertEmbed(index, collabNode._map);
-    } else if (collabNode instanceof CollabLineBreakNode) {
-      xmlText.insertEmbed(index, collabNode._map);
-    } else if (collabNode instanceof CollabDecoratorNode) {
-      xmlText.insertEmbed(index, collabNode._xmlElem);
+    if (collabNode) {
+      sharedChildren.insert(index, [collabNode._sharedMap]);
     }
 
     for (const childToDelete of children.slice(index, index + delCount)) {
@@ -516,22 +401,41 @@ export class CollabElementNode {
   }
 
   destroy(binding: Binding): void {
-    const collabNodeMap = binding.collabNodeMap;
-
     for (const child of this._children) {
       child.destroy(binding);
     }
 
-    collabNodeMap.delete(this._key);
+    super.destroy(binding);
+  }
+
+  // for debugging
+  toJSON(): Record<string, unknown> {
+    return {
+      ...super.toJSON(),
+      children: this._children.map((child) => child.toJSON()),
+    };
   }
 }
 
 export function $createCollabElementNode(
-  xmlText: XmlText,
+  map: null | YMap<unknown>,
   parent: null | CollabElementNode,
   type: string,
 ): CollabElementNode {
-  const collabNode = new CollabElementNode(xmlText, parent, type);
-  xmlText._collabNode = collabNode;
-  return collabNode;
+  return new CollabElementNode(map, parent, type);
+}
+
+export function initExistingSharedChildren(
+  collabNode: CollabElementNode,
+): void {
+  const sharedChildren = collabNode._sharedMap.get('children') as
+    | undefined
+    | null
+    | YArray<unknown>;
+  invariant(
+    sharedChildren != null,
+    'Expected shared type to include children attribute',
+  );
+  collabNode._sharedChildren = sharedChildren;
+  sharedChildren._collabNode = collabNode;
 }

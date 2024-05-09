@@ -10,7 +10,7 @@ import type {Doc} from 'yjs';
 
 import {useCollaborationContext} from '@lexical/react/LexicalCollaborationContext';
 import {useLexicalComposerContext} from '@lexical/react/LexicalComposerContext';
-import {ExcludedProperties, Provider} from '@lexical/yjs';
+import {NestedEditorPropKeys, Provider} from '@lexical/yjs';
 import {useEffect, useMemo} from 'react';
 
 import {InitialEditorStateType} from './LexicalComposer';
@@ -33,7 +33,7 @@ type Props = {
   cursorColor?: string;
   cursorsContainerRef?: CursorsContainerRef;
   initialEditorState?: InitialEditorStateType;
-  excludedProperties?: ExcludedProperties;
+  nestedEditorPropKeys?: NestedEditorPropKeys;
   // `awarenessData` parameter allows arbitrary data to be added to the awareness.
   awarenessData?: object;
 };
@@ -46,7 +46,7 @@ export function CollaborationPlugin({
   cursorColor,
   cursorsContainerRef,
   initialEditorState,
-  excludedProperties,
+  nestedEditorPropKeys,
   awarenessData,
 }: Props): JSX.Element {
   const collabContext = useCollaborationContext(username, cursorColor);
@@ -82,7 +82,7 @@ export function CollaborationPlugin({
     shouldBootstrap,
     cursorsContainerRef,
     initialEditorState,
-    excludedProperties,
+    nestedEditorPropKeys,
     awarenessData,
   );
 

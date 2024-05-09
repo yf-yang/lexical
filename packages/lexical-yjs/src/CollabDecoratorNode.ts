@@ -6,27 +6,23 @@
  *
  */
 
-import type {Binding} from '.';
 import type {CollabElementNode} from './CollabElementNode';
-import type {DecoratorNode, NodeKey, NodeMap} from 'lexical';
-import type {XmlElement} from 'yjs';
+import type {DecoratorNode, NodeMap} from 'lexical';
+import type {Map as YMap} from 'yjs';
 
 import {$getNodeByKey, $isDecoratorNode} from 'lexical';
 import invariant from 'shared/invariant';
 
-import {syncPropertiesFromLexical, syncPropertiesFromYjs} from './Utils';
+import {CollabNode} from './CollabNode';
 
-export class CollabDecoratorNode {
-  _xmlElem: XmlElement;
-  _key: NodeKey;
-  _parent: CollabElementNode;
-  _type: string;
-
-  constructor(xmlElem: XmlElement, parent: CollabElementNode, type: string) {
+export class CollabDecoratorNode extends CollabNode {
+  constructor(
+    sharedMap: null | YMap<unknown>,
+    parent: null | CollabElementNode,
+    type: string,
+  ) {
+    super(sharedMap, parent, type, 'decorator');
     this._key = '';
-    this._xmlElem = xmlElem;
-    this._parent = parent;
-    this._type = type;
   }
 
   getPrevNode(nodeMap: null | NodeMap): null | DecoratorNode<unknown> {
@@ -46,61 +42,12 @@ export class CollabDecoratorNode {
   getCursorYjsType(): never {
     invariant(false, 'getCursorYjsType: not a valid cursor type');
   }
-
-  getType(): string {
-    return this._type;
-  }
-
-  getKey(): NodeKey {
-    return this._key;
-  }
-
-  getOffset(): number {
-    const collabElementNode = this._parent;
-    return collabElementNode.getChildOffset(this);
-  }
-
-  syncPropertiesFromLexical(
-    binding: Binding,
-    nextLexicalNode: DecoratorNode<unknown>,
-    prevNodeMap: null | NodeMap,
-  ): void {
-    const prevLexicalNode = this.getPrevNode(prevNodeMap);
-    const xmlElem = this._xmlElem;
-
-    syncPropertiesFromLexical(
-      binding,
-      xmlElem,
-      prevLexicalNode,
-      nextLexicalNode,
-    );
-  }
-
-  syncPropertiesFromYjs(
-    binding: Binding,
-    keysChanged: null | Set<string>,
-  ): void {
-    const lexicalNode = this.getNode();
-    invariant(
-      lexicalNode !== null,
-      'syncPropertiesFromYjs: could not find decorator node',
-    );
-    const xmlElem = this._xmlElem;
-    syncPropertiesFromYjs(binding, xmlElem, lexicalNode, keysChanged);
-  }
-
-  destroy(binding: Binding): void {
-    const collabNodeMap = binding.collabNodeMap;
-    collabNodeMap.delete(this._key);
-  }
 }
 
 export function $createCollabDecoratorNode(
-  xmlElem: XmlElement,
+  sharedMap: null | YMap<unknown>,
   parent: CollabElementNode,
   type: string,
 ): CollabDecoratorNode {
-  const collabNode = new CollabDecoratorNode(xmlElem, parent, type);
-  xmlElem._collabNode = collabNode;
-  return collabNode;
+  return new CollabDecoratorNode(sharedMap, parent, type);
 }

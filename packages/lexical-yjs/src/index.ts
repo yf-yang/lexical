@@ -8,7 +8,13 @@
 
 import type {Binding} from './Bindings';
 import type {LexicalCommand} from 'lexical';
-import type {Doc, RelativePosition, UndoManager, XmlText} from 'yjs';
+import type {
+  Array as YArray,
+  Doc,
+  Map as YMap,
+  RelativePosition,
+  UndoManager,
+} from 'yjs';
 
 import {createCommand} from 'lexical';
 import {UndoManager as YjsUndoManager} from 'yjs';
@@ -56,12 +62,12 @@ export type Delta = Array<Operation>;
 export type YjsNode = Record<string, unknown>;
 export type YjsEvent = Record<string, unknown>;
 export type {Provider};
-export type {Binding, ClientID, ExcludedProperties} from './Bindings';
+export type {Binding, ClientID, NestedEditorPropKeys} from './Bindings';
 export {createBinding} from './Bindings';
 
 export function createUndoManager(
   binding: Binding,
-  root: XmlText,
+  root: (YMap<unknown> | YArray<unknown>)[],
 ): UndoManager {
   return new YjsUndoManager(root, {
     trackedOrigins: new Set([binding, null]),

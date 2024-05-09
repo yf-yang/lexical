@@ -6,7 +6,7 @@
  *
  */
 
-import type {Binding, ExcludedProperties, Provider} from '@lexical/yjs';
+import type {Binding, NestedEditorPropKeys, Provider} from '@lexical/yjs';
 import type {LexicalEditor} from 'lexical';
 
 import {mergeRegister} from '@lexical/utils';
@@ -52,15 +52,15 @@ export function useYjsCollaboration(
   shouldBootstrap: boolean,
   cursorsContainerRef?: CursorsContainerRef,
   initialEditorState?: InitialEditorStateType,
-  excludedProperties?: ExcludedProperties,
+  nestedEditorPropKeys?: NestedEditorPropKeys,
   awarenessData?: object,
 ): [JSX.Element, Binding] {
   const isReloadingDoc = useRef(false);
   const [doc, setDoc] = useState(docMap.get(id));
 
   const binding = useMemo(
-    () => createBinding(editor, provider, id, doc, docMap, excludedProperties),
-    [editor, provider, id, docMap, doc, excludedProperties],
+    () => createBinding(editor, id, doc, docMap, nestedEditorPropKeys),
+    [editor, id, docMap, doc, nestedEditorPropKeys],
   );
 
   const connect = useCallback(() => {
@@ -88,7 +88,7 @@ export function useYjsCollaboration(
         shouldBootstrap &&
         isSynced &&
         root.isEmpty() &&
-        root._xmlText._length === 0 &&
+        root._sharedChildren._length === 0 &&
         isReloadingDoc.current === false
       ) {
         initializeEditor(editor, initialEditorState);
@@ -133,8 +133,9 @@ export function useYjsCollaboration(
     provider.on('status', onStatus);
     provider.on('sync', onSync);
     awareness.on('update', onAwarenessUpdate);
-    // This updates the local editor state when we recieve updates from other clients
-    root._xmlText.observeDeep(onYjsTreeChanges);
+    // This updates the local editor state when we receive updates from other clients
+    root._sharedChildren.observeDeep(onYjsTreeChanges);
+    root._props.observeDeep(onYjsTreeChanges);
     const removeListener = editor.registerUpdateListener(
       ({
         prevEditorState,
@@ -169,7 +170,8 @@ export function useYjsCollaboration(
       provider.off('status', onStatus);
       provider.off('reload', onProviderDocReload);
       awareness.off('update', onAwarenessUpdate);
-      root._xmlText.unobserveDeep(onYjsTreeChanges);
+      root._props.unobserveDeep(onYjsTreeChanges);
+      root._sharedChildren.unobserveDeep(onYjsTreeChanges);
       docMap.delete(id);
       removeListener();
     };
@@ -259,7 +261,11 @@ export function useYjsHistory(
   binding: Binding,
 ): () => void {
   const undoManager = useMemo(
-    () => createUndoManager(binding, binding.root._xmlText),
+    () =>
+      createUndoManager(binding, [
+        binding.root._props,
+        binding.root._sharedChildren,
+      ]),
     [binding],
   );
 
