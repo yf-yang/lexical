@@ -43,15 +43,12 @@ export function createBinding(
     doc !== undefined && doc !== null,
     'createBinding: doc is null or undefined',
   );
-  // This map is useless, but we need to create it to satisfy the type system.
-  const rootMap = doc.getMap('root');
+
   // Those two properties should be globally unique, so create them from doc.
   const rootProps = doc.getMap('root.props');
   const rootChildren = doc.getArray('root.children');
-  rootMap.set('type', 'root');
-  rootMap.set('category', 'element');
   const root: CollabElementNode = $createCollabElementNode(
-    rootMap,
+    null, // root is special, it does not have a sharedMap.
     null,
     'root',
   );

@@ -9,7 +9,7 @@ import type {CollabElementNode} from './CollabElementNode';
 
 import {LexicalNode, NodeKey} from 'lexical';
 import invariant from 'shared/invariant';
-import {Map as YMap} from 'yjs';
+import {AbstractType, Map as YMap} from 'yjs';
 
 import {Binding} from './Bindings';
 
@@ -31,20 +31,21 @@ export abstract class CollabNode {
     this._type = type;
     this._category = category;
     if (sharedMap === null) {
-      this._sharedMap = new YMap();
-      this._props = new YMap();
-      this._sharedMap.set('type', type);
-      this._sharedMap.set('category', category);
-      this._sharedMap.set('props', this._props);
-      this._props._collabNode = this;
-    } else {
-      this._sharedMap = sharedMap;
       if (parent !== null) {
-        initExistingSharedProps(this);
+        this._sharedMap = new YMap();
+        this._props = new YMap();
+        this._sharedMap.set('type', type);
+        this._sharedMap.set('category', category);
+        this._sharedMap.set('props', this._props);
+        this._props._collabNode = this;
+        this._sharedMap._collabNode = this;
       }
       // if parent === null (root node), then we set _props when creating binding
+    } else {
+      this._sharedMap = sharedMap;
+      initExistingSharedProps(this);
+      this._sharedMap._collabNode = this;
     }
-    this._sharedMap._collabNode = this;
     this._parent = parent;
   }
 
@@ -63,6 +64,11 @@ export abstract class CollabNode {
 
   getNode(): null | LexicalNode {
     invariant(false, 'getNode: method not implemented');
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  getCursorYjsType(): AbstractType<any> {
+    invariant(false, 'getCursorYjsType: method not implemented');
   }
 
   destroy(binding: Binding): void {

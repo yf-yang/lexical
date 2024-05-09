@@ -192,9 +192,14 @@ describe('Collaboration', () => {
 
   it('Should collaborate basic text deletion conflicts between two clients', async () => {
     const connector = createTestConnection();
+
+    // First client is started before second client is initialized.
+    // It guarantees that createBinding won't set any children of top level yjs data
+    // when create binding (called by client.start). Otherwise, the new doc (created when
+    // createClient is called) won't be connected with it successfully.
     const client1 = connector.createClient('1');
-    const client2 = connector.createClient('2');
     client1.start(container!);
+    const client2 = connector.createClient('2');
     client2.start(container!);
 
     await expectCorrectInitialContent(client1, client2);
@@ -253,18 +258,10 @@ describe('Collaboration', () => {
       client1.connect();
     });
 
-    // TODO we can probably handle these conflicts better. We could keep around
-    // a "fallback" {Map} when we remove text without any adjacent text nodes. This
-    // would require big changes in `CollabElementNode.splice` and also need adjustments
-    // in `CollabElementNode.applyChildrenYjsDelta` to handle the existence of these
-    // fallback maps. For now though, if a user clears all text nodes from an element
-    // and another user inserts some text into the same element at the same time, the
-    // deletion will take precedence on conflicts.
     expect(client1.getHTML()).toEqual('<p><br></p>');
     expect(client1.getHTML()).toEqual(client2.getHTML());
-    expect(client1.getDocJSON()).toEqual({
-      root: '',
-    });
+    expect(client1.getDocJSON()['root.children'].length).toEqual(1);
+    expect(client1.getDocJSON()['root.children'][0].type).toEqual('paragraph');
     expect(client1.getDocJSON()).toEqual(client2.getDocJSON());
     client1.stop();
     client2.stop();

@@ -41,13 +41,15 @@ export class CollabElementNode extends CollabNode {
   ) {
     super(sharedMap, parent, type, 'element');
     if (sharedMap === null) {
-      this._sharedChildren = new YArray();
-      this._sharedMap.set('children', this._sharedChildren);
-      this._sharedChildren._collabNode = this;
+      if (parent !== null) {
+        this._sharedChildren = new YArray();
+        this._sharedMap.set('children', this._sharedChildren);
+        this._sharedChildren._collabNode = this;
+      }
+      // if parent === null (root node), then we set _sharedChildren when creating binding
     } else if (parent !== null) {
       initExistingSharedChildren(this);
     }
-    // if parent === null (root node), then we set _sharedChildren when creating binding
     this._key = '';
     this._children = [];
   }
